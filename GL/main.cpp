@@ -309,7 +309,7 @@ int main(int argc, char **argv) {
             treebuilder = createTreeBuilder();
             std::cout << "TreeBuilder created" << std::endl;
 
-            // Build Tree
+            // Build KD-Tree
             if (treebuilder != NULL)
             {
                 unsigned long startTime = getTime();

@@ -71,6 +71,13 @@ public:
             return false;
     }
 
+    virtual bool intersect(const Ray &ray, IntersectionData* iData)
+	{
+		/// Not implemented. Since it is not needed.
+
+		return true;
+	}
+
 	// get bounding box.
 	AABB getBB() const
 	{

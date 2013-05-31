@@ -178,6 +178,7 @@ private:
 	vector<BoundaryElement>    partbound;
 	vector<VolumeElement>     volelems ;
 	map<int,string> sharedVert;
+	map<int,string> sharedTempVert;
 
     bool boundset;
 
@@ -2798,7 +2799,9 @@ public:
                     }
 				}
 
-				///Uncomment this part to make minid back the smallest one again.
+				///Uncomment this part to assign somewhat uniform owner processors.
+
+                /*
 				int detlef = ((*myit).first.x[0] + (*myit).first.x[1]) % combprocset.size();
 				for(procsetit = combprocset.begin(); procsetit != combprocset.end(); procsetit++)
 				{
@@ -2808,18 +2811,28 @@ public:
 				    }
 				    detlef--;
 				}
+				*/
+
 
 
 
                 if((minid == mypid) && (combprocset.size() > 1) )
                 {
-                    (*myit).second = -2;         // If equals 2 means it is shared and the owner is this one.
+                    (*myit).second = -2;         // If equals -2 means it is shared and the owner is this one.
                     totowner++;
                 }
                 else if( (minid == mypid) && (combprocset.size() == 1))   // If the size of the set is 1. This is the owner
                 {
                     (*myit).second = 0;         // Internal vertex
                     totowner++;
+                }
+                else if(combprocset.size() < 1)
+                {
+                    std::cout << "PROBLEM - Combprocset Size Error!" << std::endl; // Should never happen.
+                }
+                else if((minid != mypid) && (combprocset.size() == 1))
+                {
+                    std::cout << "PROBLEM - Combprocset Size Error Type 2!" << std::endl; // Should never happen.
                 }
 
                 /*
@@ -2838,6 +2851,8 @@ public:
                 combprocset.clear();
             }
         }
+
+        /// Here -2 means shared and owned, -1 means shared but not owned, 0 means internal vertex.
 
 
         int myvertices = totowner + totnonshared;
@@ -2965,7 +2980,7 @@ public:
             }
         }
 
-        /// New migration find send counts START
+        /// Find send counts START
         sendcount = 0;
         for(int i=0; i<numprocs; i++)
         {
@@ -3035,7 +3050,7 @@ public:
         /// Now each processor knows how much it will receive from which processor. (recvcounts & recvprids)
         /// And how much it will send to which processor. (sendcounts & sendprids)
 
-        /// New migration find send and recv counts END
+        /// Find send and recv counts END
 
         recvpr5 = new int[recvcount+1];
         sendpr5 = new int[sendcount+1];
@@ -3058,8 +3073,8 @@ public:
         /// Now we know which processor will send what, which will get what and how many from whom.
         /// We should fill the contents.
 
-        // std::cout << "RANK: " << mypid << " has to receive: " << recvpr5[recvcount] << "   " << totshared - totowner << std::endl;
-        // std::cout << "RANK: " << mypid << " has to send: " << sendpr5[sendcount] << "   " << totowner << std::endl;
+        std::cout << "RANK: " << mypid << " has to receive: " << recvpr5[recvcount] << "   " << totshared - totowner << std::endl;
+        std::cout << "RANK: " << mypid << " has to send: " << sendpr5[sendcount] << "   " << totowner << std::endl;
 
         int* datatosend = new int[3 * sendpr5[sendcount]];
         int curin = 0;
@@ -3090,6 +3105,10 @@ public:
 					oss.clear();
 					oss.str("");
 				}
+				else
+				{
+				    std::cout << "PROBLEM2 during actual data fill to send" << std::endl;
+				}
 
 				/// Now we have the processor id's from the first vertex.
 
@@ -3114,6 +3133,10 @@ public:
 					oss.clear();
 					oss.str("");
 				}
+				else
+				{
+				    std::cout << "PROBLEM2 during actual data fill to send" << std::endl;
+				}
 
 				/// Now we have the processor id's in combprocset which contain both the vertices.
 
@@ -3132,6 +3155,11 @@ public:
                         datatosend[curin2+1] = (*myit).first.x[1];
                         datatosend[curin2+2] = (*myit).second;
 
+                        if((*myit).second == -2)
+                        {
+                            std::cout << "PROBLEM2 - ID to be send should'nt equal -2" << std::endl;
+                        }
+
                         currentel5[curin]++;
                     }
 				}
@@ -3140,6 +3168,8 @@ public:
                 combprocset.clear();
             }
         }
+
+        int maxcurrentlid = curindex;
 
         int* datattorecv = new int[3 * recvpr5[recvcount]];
 
@@ -3174,6 +3204,10 @@ public:
 
         int totproblemm = 0;
 
+        std::list<Index3> excessList;
+        Index3 i3;
+        std::list<Index3>::iterator excessit;
+
         for(int i=0; i<recvpr5[recvcount]; i++)
         {
             i2.x[0] = datattorecv[3*i];
@@ -3185,21 +3219,115 @@ public:
 
             if(myit == edges.end())
             {
-                std::cout << mypid << "   " << i2.x[0] << "   "  << i2.x[1] << "   " << datattorecv[3*i+2] << std::endl;
+                /// This creates excess problem. Too many data is sent.
+                // std::cout << "EKSTRA: " << mypid << "   " << i2.x[0] << "   "  << i2.x[1] << "   " << datattorecv[3*i+2] << std::endl;
+
+                i3.x[0] = i2.x[0];
+                i3.x[1] = i2.x[1];
+                i3.x[2] = datattorecv[3*i+2];
+
+                excessList.push_back(i3);
+
                 totproblemm++;
+
+                continue;
             }
             // std::cout << datattorecv[3*i+2] << std::endl;
-            myit->second = datattorecv[3*i+2];
+
+            if (myit->second != -1)
+            {
+                std::cout << "PROBLEM - Processor ownership conflict!" << std::endl;
+            }
+            else
+            {
+                myit->second = datattorecv[3*i+2];
+            }
         }
 
+        int totabsent = 0;
+
+        for(myit = edges.begin(); myit != edges.end(); myit++)
+        {
+            /// This is the absess problem. Not received data that should be here.
+            if((*myit).second == -1)
+            {
+                totabsent++;
+            }
+        }
+
+        int *ids1 = new int[totabsent];
+        int *ids2 = new int[totabsent];
+
+        int qq = 0;
 
         for(myit = edges.begin(); myit != edges.end(); myit++)
         {
             if((*myit).second == -1)
             {
-                totproblemm--;
+                // std::cout << "ABSENT: " << mypid << "   " << myit->first.x[0] << "   "  << myit->first.x[1] << "   " << -1 << std::endl;
+                // totproblemm--;
+                ids1[qq] = myit->first.x[0];
+                ids2[qq] = myit->first.x[1];
+                qq++;
             }
         }
+
+        /// For processing of received information from this function.
+        /// (Beware; if shared proc list has only one procesor then it is an internal vertex.)
+        /// In this case no one gets extra information.
+        /// Do not forget (procid = procid + 1) for elmer
+        solveAbsentProblem(ids1, ids2, totabsent, maxcurrentlid);
+        // std::cout << "RANK: " << mypid << " received the following absent Data: " << std::endl;
+        // std::cout << absentData;
+
+        /// Adding the absent global id's.
+        std::stringstream oss5(stringstream::in | stringstream::out);
+        oss5 << absentData;
+
+        int a1,b1,gl2,c2, tp2;
+        while(oss5.good() && oss5.str().length() != 0)
+        {
+            oss5 >> a1 >> b1 >> gl2 >> c2;
+
+            for(int i=0;i<c2;i++)
+            {
+                oss5 >> tp2;
+            }
+
+            i2.x[0] = a1;
+            i2.x[1] = b1;
+            i2.Sort();
+            edges.find(i2)->second = gl2;
+
+            // std::cout << a1 << " " << b1 << " " << gl2 << std::endl;
+        }
+
+        int excesssize = excessList.size();
+        int *ids3 = new int[excesssize];
+        int *ids4 = new int[excesssize];
+        int *idsgl = new int[excesssize];
+
+        qq = 0;
+
+        for(excessit = excessList.begin(); excessit != excessList.end(); excessit++)
+        {
+            i3 = *excessit;
+            ids3[qq] = i3.x[0];
+            ids4[qq] = i3.x[1];
+            idsgl[qq] = i3.x[2];
+            qq++;
+        }
+
+        solveExcessProblem(ids3, ids4, idsgl, excesssize);
+
+        // std::cout << "RANK: " << mypid << " received the following excess Data: " << std::endl;
+        // std::cout << excessData << excessData2;
+
+
+        /// After both processes have completed.
+        /// First update global ids of those who were -1. (uninitialized)
+        /// The following parts can then proceed.
+        /// The shared vertex information should be updated with the received data afterwards.
 
         delete [] datatosend;
         delete [] datattorecv;
@@ -3270,17 +3398,24 @@ public:
 
                     for(procsetit = combprocset.begin(); procsetit != combprocset.end(); procsetit++)
                     {
-                        oss << " " << *procsetit + 1;      // Elmer procid = MPIprocid + 1
+                        oss << " " << (*procsetit) + 1;      // Elmer procid = MPIprocid + 1
                     }
 
-                    sharedVert[(*myit).second] = oss.str();
+
 
                     if((*myit).second == -1)
                     {
-                        //std::cout << "PROBLEMMPPPP!!!!  " << a3 <<  "   "  << b3 << std::endl;
+                        std::cout << "PROBLEMMPPPP!!!!  Missing data: " << a3 <<  "   "  << b3 << std::endl;
                     }
-
-                    numshared++;
+                    else if((*myit).second <= 0)
+                    {
+                        std::cout << "ERROR NEVER SHOULD HAVE HAPPENED!" << std::endl;
+                    }
+                    else
+                    {
+                        sharedVert[(*myit).second] = oss.str();
+                        numshared++;    // This is the private member of the MeshMig class. Not a local variable.
+                    }
 
                     oss.clear();
                     oss.str("");
@@ -3308,6 +3443,143 @@ public:
             cs++;
         }
         numvertex += edges.size();
+
+
+        /// Updating absent Data related shared processor info errors.
+        std::stringstream oss6(stringstream::in | stringstream::out);
+        std::stringstream oss7(stringstream::in | stringstream::out);
+
+        oss6.clear();
+        oss6.str("");
+        oss6 << absentData;
+
+        oss7.clear();
+        oss7.str("");
+
+        while(!oss6.eof())
+        {
+            oss6 >> a1 >> b1 >> gl2 >> c2;
+
+            if(oss6.eof())
+            {
+                break;
+            }
+
+            oss7 << c2;
+
+            for(int i=0;i<c2;i++)
+            {
+                oss6 >> tp2;
+                oss7 << " " << tp2 + 1;
+            }
+
+            tmpstr = oss7.str();
+
+            if(c2 == 1)
+            {
+                // delete shared vertex from list.
+                sharedVert.erase(gl2);
+                // std::cout << "RANK: " << mypid << " has deleted shared info with global id: " << gl2 << std::endl;
+            }
+            else if(c2 > 1)
+            {
+                sharedVert[gl2] = tmpstr;
+                // std::cout << "RANK: " << mypid << " has updated shared info with global id: " << gl2 << " to: " << tmpstr << std::endl;
+            }
+
+            oss7.clear();
+            oss7.str("");
+        }
+
+        /// Update excessData
+        oss6.clear();
+        oss6.str("");
+        oss6 << excessData;
+
+        oss7.clear();
+        oss7.str("");
+
+        while(!oss6.eof())
+        {
+            oss6 >> a1 >> b1  >> c2;
+
+            if(oss6.eof())
+            {
+                break;
+            }
+
+            i2.x[0] = a1;
+            i2.x[1] = b1;
+            i2.Sort();
+            gl2 = edges.find(i2)->second;
+
+            if(c2 == 1)
+            {
+                // delete shared vertex from list.
+                sharedVert.erase(gl2);
+            }
+
+            oss7 << c2;
+
+            for(int i=0;i<c2;i++)
+            {
+                oss6 >> tp2;
+                oss7 << " " << tp2 + 1;
+            }
+
+            if(c2 > 1)
+            {
+                sharedVert[gl2] = oss7.str();
+            }
+
+            oss7.clear();
+            oss7.str("");
+        }
+
+        /// Update excessData 2
+        oss6.clear();
+        oss6.str("");
+        oss6 << excessData2;
+
+        oss7.clear();
+        oss7.str("");
+
+        while(!oss6.eof())
+        {
+            oss6 >> a1 >> b1  >> c2;
+
+            if(oss6.eof())
+            {
+                break;
+            }
+
+            i2.x[0] = a1;
+            i2.x[1] = b1;
+            i2.Sort();
+            gl2 = edges.find(i2)->second;
+
+            if(c2 == 1)
+            {
+                // delete shared vertex from list.
+                sharedVert.erase(gl2);
+            }
+
+            oss7 << c2;
+
+            for(int i=0;i<c2;i++)
+            {
+                oss6 >> tp2;
+                oss7 << " " << tp2 + 1;
+            }
+
+            if(c2 > 1)
+            {
+                sharedVert[gl2] = oss7.str();
+            }
+
+            oss7.clear();
+            oss7.str("");
+        }
 
         /// Create the new boundaryelements.
 
@@ -3603,6 +3875,7 @@ public:
             options[PMV3_OPTION_DBGLVL] = 7;
             options[PMV3_OPTION_SEED] = 0;
 
+            eptr2[0] = 0;
             for(int i=0; i<(nelems-numprocs+1); i++)
             {
                 eptr2[i+1] = eptr2[i] + 4;
@@ -4734,6 +5007,8 @@ public:
 				}
 
 				///Uncomment this part to make minid back the smallest one again.
+
+				/*
 				int detlef = ((*myit).first.x[0] + (*myit).first.x[1]) % combprocset.size();
 				for(procsetit = combprocset.begin(); procsetit != combprocset.end(); procsetit++)
 				{
@@ -4743,6 +5018,7 @@ public:
 				    }
 				    detlef--;
 				}
+				*/
 
 				if( checkit == false)
 				{
@@ -6324,6 +6600,7 @@ public:
             }
 
             ///Uncomment this part to make minid back the smallest one again.
+			/*
 				int detlef = (ids3[i]+ ids4[i]) % combprocset.size();
 				for(procsetit = combprocset.begin(); procsetit != combprocset.end(); procsetit++)
 				{
@@ -6333,6 +6610,7 @@ public:
 				    }
 				    detlef--;
 				}
+				*/
 
             destprids[i] = minid;
 
@@ -7007,6 +7285,8 @@ public:
             }
 
             ///Uncomment this part to make minid back the smallest one again.
+
+			/*
 				int detlef = (ids1[i] + ids2[i]) % combprocset.size();
 				for(procsetit = combprocset.begin(); procsetit != combprocset.end(); procsetit++)
 				{
@@ -7016,6 +7296,7 @@ public:
 				    }
 				    detlef--;
 				}
+				*/
 
             destprids[i] = minid;
 

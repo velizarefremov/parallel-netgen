@@ -9,7 +9,9 @@
 #ifndef _IELEMENT_H
 #define _IELEMENT_H
 
+#include "Ray.h"
 #include "AABB.h"
+#include "IntersectionData.h"
 
 class IElement {
 

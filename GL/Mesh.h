@@ -1,5 +1,6 @@
 /*
  *  Mesh.h
+ *  RayTracer
  *
  *  Created by Yusuf Yilmaz on 5/23/10.
  *  Copyright 2010 __MyCompanyName__. All rights reserved.
