@@ -2464,10 +2464,12 @@ public:
 		return 0;
 	}
 
-    void refineParallel(MPI_Comm comm)
+    void refineParallel(MPI_Comm comm, const char* inputFile)
     {
         bool (*fn_pt)(Index2,Index2) = fncomp;
+        bool (*fn_pt2)(Index2,Index2) = fncomp;
         std::map<Index2,int, bool(*)(Index2, Index2)> edges(fn_pt);
+        std::map<Index2,int, bool(*)(Index2, Index2)> edgesonbound(fn_pt2);
         std::map<Index2,int, bool(*)(Index2, Index2)>::iterator myit;
 
         Index2 i2;
@@ -2478,6 +2480,49 @@ public:
 
         int maxelid = 0;
         int maxglobalid = 0;
+
+        /// Fill edgesonbound
+        int curgeoid = 0;
+
+        for(int i=0; i<numboundary; i++)
+        {
+            curgeoid = boundelems[i].geoid - 1; // ElmerID's are (NetgenID + 1)
+
+            // 1
+            i2.x[0] = boundelems[i].verts[0];
+            i2.x[1] = boundelems[i].verts[1];
+
+            i2.Sort();
+
+            // If edge is not already in the edge list the add it to the list.
+            if(edgesonbound.find(i2) == edgesonbound.end())
+            {
+                edgesonbound.insert(pair<Index2,int>(i2,curgeoid));
+            }
+
+            // 2
+            i2.x[0] = boundelems[i].verts[0];
+            i2.x[1] = boundelems[i].verts[2];
+
+            i2.Sort();
+
+            if(edgesonbound.find(i2) == edgesonbound.end())
+            {
+                edgesonbound.insert(pair<Index2,int>(i2,curgeoid));
+            }
+
+            // 3
+            i2.x[0] = boundelems[i].verts[1];
+            i2.x[1] = boundelems[i].verts[2];
+
+            i2.Sort();
+
+            if(edgesonbound.find(i2) == edgesonbound.end())
+            {
+                edgesonbound.insert(pair<Index2,int>(i2,curgeoid));
+            }
+        }
+        /// Fill edgesobbound END
 
         for(int i=0; i<numvolume; i++)
         {
@@ -3339,10 +3384,74 @@ public:
         int a3 = 0;
         int b3 = 0;
 
+        /// Project Edges on Boundary to Geometry
+
+        int boundedgesize = edgesonbound.size();
+        double* xdeger = new double[boundedgesize];
+        double* ydeger = new double[boundedgesize];
+        double* zdeger = new double[boundedgesize];
+        int* yuzeydeger = new int[boundedgesize];
+
+        std::cout << "EDGES ON BOUNDARY SIZE OF RANK: " << mypid << " is: " << boundedgesize << " versus " << edges.size() << std::endl;
+
+        /// Now project them on the surface. Get the results on xdeger, ydeger, zdeger. (This will be an NG Call).
+        using namespace nglib;
+
+        int pp1 = 0;
+        int pa1 = 0;
+        int pa2 = 0;
+
+        for(myit = edgesonbound.begin(); myit != edgesonbound.end(); myit++)
+        {
+            pa1 = myit->first.x[0];
+            pa2 = myit->first.x[1];
+
+            pa1 = vertmap.find(pa1)->second;
+            pa2 = vertmap.find(pa2)->second;
+
+            xdeger[pp1] = (verts[pa1].coor[0] + verts[pa2].coor[0])/2;
+            ydeger[pp1] = (verts[pa1].coor[1] + verts[pa2].coor[1])/2;
+            zdeger[pp1] = (verts[pa1].coor[2] + verts[pa2].coor[2])/2;
+
+            yuzeydeger[pp1] = (*myit).second;
+            pp1++;
+        }
+
+        Ng_CSG_ProjectMesh(inputFile, boundedgesize, xdeger, ydeger, zdeger, yuzeydeger);
+
+        MPI_Barrier(comm);
+
+        pp1 = 0;
+        for(myit = edgesonbound.begin(); myit != edgesonbound.end(); myit++)
+        {
+            (*myit).second = pp1;
+            pp1++;
+        }
+
+        int totalscheus = 0;
+        bool isonface = false;
+        int indexxx = 0;
+
+        /// Project Edges on Boundary to Geometry END
+
         for(myit = edges.begin(); myit != edges.end(); myit++)
         {
             a3 = (*myit).first.x[0];
             b3 = (*myit).first.x[1];
+
+            /// Check if edge is on boundary
+
+            i2.x[0] = a3;
+            i2.x[1] = b3;
+
+            i2.Sort();
+
+            if(edgesonbound.find(i2) != edgesonbound.end())
+            {
+                isonface = true;
+                indexxx = edgesonbound.find(i2)->second;
+            }
+            /// Check if edge is on boundary END
 
             /// Create shared information
             if(sharedVert.find(a3) != sharedVert.end() || sharedVert.find(b3) != sharedVert.end())
@@ -3432,18 +3541,36 @@ public:
 
             // std::cout << a3 << "  " << b3 << std::endl;
 
+            if(myit->second == 0 || myit->second == -1 || myit->second == -2)
+            {
+                totalscheus++;
+            }
+
             verts[numvertex + cs].idx = myit->second;
             verts[numvertex + cs].useCount = 0;
-            verts[numvertex + cs].coor[0] = (verts[a3].coor[0] + verts[b3].coor[0])/2;
-            verts[numvertex + cs].coor[1] = (verts[a3].coor[1] + verts[b3].coor[1])/2;
-            verts[numvertex + cs].coor[2] = (verts[a3].coor[2] + verts[b3].coor[2])/2;
+
+            /// Put projected values if edge is on boundary.
+            if(isonface != true)
+            {
+                verts[numvertex + cs].coor[0] = (verts[a3].coor[0] + verts[b3].coor[0])/2;
+                verts[numvertex + cs].coor[1] = (verts[a3].coor[1] + verts[b3].coor[1])/2;
+                verts[numvertex + cs].coor[2] = (verts[a3].coor[2] + verts[b3].coor[2])/2;
+            }
+            else
+            {
+                verts[numvertex + cs].coor[0] = xdeger[indexxx];
+                verts[numvertex + cs].coor[1] = ydeger[indexxx];
+                verts[numvertex + cs].coor[2] = zdeger[indexxx];
+            }
 
             vertmap[myit->second] = numvertex + cs;
 
             cs++;
+            isonface = false;
         }
         numvertex += edges.size();
 
+        std::cout << "RANK: " << mypid << " has Total Sh.. " << totalscheus << std::endl;
 
         /// Updating absent Data related shared processor info errors.
         std::stringstream oss6(stringstream::in | stringstream::out);

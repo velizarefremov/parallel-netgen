@@ -929,6 +929,8 @@ public:
     {
         /// Edit here.
 
+        fileName = inFileName;
+
         std::string line;
         std::string foundname;
         size_t found;
@@ -2322,11 +2324,11 @@ public:
             MPI_Barrier(MPI_COMM_WORLD);
             */
 
-            localMesh->refineParallel(MPI_COMM_WORLD);
+            localMesh->refineParallel(MPI_COMM_WORLD, fileName);
             std::cout << "RANK: " << rank << " ended refinement." << std::endl;
             MPI_Barrier(MPI_COMM_WORLD);
 
-            localMesh->refineParallel(MPI_COMM_WORLD);
+            localMesh->refineParallel(MPI_COMM_WORLD, fileName);
             std::cout << "RANK: " << rank << " ended refinement." << std::endl;
             MPI_Barrier(MPI_COMM_WORLD);
 
@@ -2493,7 +2495,7 @@ private:
 	unsigned int numtriangleused;
 
 	BSPTreeNode * rootNode;						// root node of the tree.
-
+    const char *fileName;
 };
 
 #endif

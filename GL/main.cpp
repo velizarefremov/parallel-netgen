@@ -309,7 +309,7 @@ int main(int argc, char **argv) {
             treebuilder = createTreeBuilder();
             std::cout << "TreeBuilder created" << std::endl;
 
-            // Build KD-Tree
+            // Build Tree
             if (treebuilder != NULL)
             {
                 unsigned long startTime = getTime();
@@ -366,7 +366,7 @@ int main(int argc, char **argv) {
             }
             else if(usedmethod == 2)
             {
-                localMesh->refineParallel(MPI_COMM_WORLD);
+                localMesh->refineParallel(MPI_COMM_WORLD, inputFileName);
                 MPI_Barrier(MPI_COMM_WORLD);
             }
         }
